@@ -36,7 +36,7 @@ case $(uname) in
     ;;
   "Darwin")
       export PS1='$(echo $PWD | sed -es%${HOME}%~%) \$ '
-      [[ -d $HOME/.homebrew ]] && {
+      [[ -d "${HOME}/.homebrew" ]] && {
         export LIBRARY_PATH="~/.homebrew/lib:${LIBRARY_PATH}"
         PathAppend "${HOME}/.homebrew/bin"
       }
@@ -52,19 +52,19 @@ esac
 
 PathAppend "${HOME}/bin" "${HOME}/scripts"
 
-[[ -d $HOME/go ]] && {
+[[ -d "${HOME}/go" ]] && {
   export GOPATH="${HOME}/go"
   PathPrepend "$GOPATH"
 }
 
-[[ -f $HOME/.env.vagrant ]] && source $HOME/.env.vagrant
-[[ -f $HOME/.env.artifactory ]] && source $HOME/.env.artifactory
+[[ -f "${HOME}/.env.vagrant" ]] && source "${HOME}/.env.vagrant"
+[[ -f "${HOME}/.env.artifactory" ]] && source "${HOME}/.env.artifactory"
 PathExec direnv && eval "$(direnv hook bash)"
 PathExec pyenv && eval "$(pyenv init -)"
 
-[[ -d $HOME/rvm ]] && {
+[[ -d "${HOME}/.rvm" ]] && {
   PathAppend "${HOME}/.rvm/bin"
-  [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+  [[ -s "${HOME}/.rvm/scripts/rvm" ]] && source "${HOME}/.rvm/scripts/rvm"
 }
 
 PathExec vim && alias vi=vim
