@@ -7,7 +7,7 @@ PathExec() {
 
 PathSearch() {
   echo "$PATH" | egrep -q "(^|:)${1}(:.+|$)"
-  return $?  
+  return $?
 }
 
 PathPrepend() {
@@ -16,7 +16,7 @@ PathPrepend() {
       [[ -d "$item" ]] && export PATH="${item}:${PATH}"
     }
   done
-}  
+}
 
 PathAppend() {
   for item in $* ; do
@@ -42,12 +42,12 @@ case $(uname) in
       }
     ;;
   "SunOS")
-        PathAppend /opt/csw/bin /opt/omni/bin /usr/local/bin 
-        PathAppend /sbin /usr/sbin /opt/csw/sbin /opt/omni/sbin
+      PathAppend /opt/csw/bin /opt/omni/bin /usr/local/bin
+      PathAppend /sbin /usr/sbin /opt/csw/sbin /opt/omni/sbin
     ;;
   "FreeBSD")
-        PathPrepend /usr/local/bin /usr/local/sbin
-    ;; 
+      PathPrepend /usr/local/bin /usr/local/sbin
+    ;;
 esac
 
 PathAppend "${HOME}/bin" "${HOME}/scripts"
