@@ -1,0 +1,183 @@
+#!/bin/bash
+##########################################################################
+##
+## sendfast
+##
+## Recursively transfer a directory path as fast as possible by using
+## parallelized tar over ssh, along with lz4 compression.
+##
+## Developed initially for copying mysql DB contents between servers.
+##
+## Assumes agent forwarding or a passphrase-less key.
+##
+##########################################################################
+
+# shellcheck disable=SC1091
+source /usr/local/lib/brashlib || {
+  echo 'ERROR sourcing /usr/local/lib/brashlib'
+  exit 1
+}
+
+## handle errors ourselves
+set +e
+
+## Set some defaults
+threads=8
+depth=1
+sorted=0
+ssh_cmd="ssh -c aes128-ctr -o StrictHostKeyChecking=no"
+xargs_cmd='xargs'
+ls_cmd='ls -1'
+lsa_cmd='ls -A -1'
+export tar_cmd_src='tar'
+export lz4_cmd_src='lz4'
+export tar_cmd_dest='tar'
+export lz4_cmd_dest='lz4'
+
+## Change executable names if this host is Solaris-ish
+if [[ "$(uname)" == "SunOS" ]]; then
+  xargs_cmd='gxargs'
+  lsa_cmd='/usr/gnu/bin/ls -A -1'
+  export tar_cmd_src='gtar'
+  export lz4_cmd_src='/usr/local/bin/lz4'
+fi
+
+Usage() {
+  cat << EOF
+  $(basename "$0"): Send contents of a path to a remote server as fast as possible.
+
+  Copying is via parallelized tar over ssh, piped through lz4 compression.
+
+  Usage:
+
+    $(basename "$0") [options] <SOURCEDIR> <DESTHOST>:<DESTDIR>
+
+    <DESTDIR> must contain the full path you want the source copied into.  Thus the command
+    'sendfast /home/user/foo remotebox:/home/user' will NOT create the 'foo' directory
+    on the destination -- the source contents will be put directly into the destination
+    homedir.  IOW the behavior is similar to using a closing "/" on an rsync sourcedir.
+
+  Options:
+
+    --depth=#         Parallelize content sending at directory depth # (default 1).
+    --dotfiles        Send "hidden" files/directories (default, do not send).
+    --sshuser=<user>  Send as remote <user>.
+    --sshkey=<file>   Use <file> as ssh private key.
+    --sorted          Send the largest files/dir's first (default is alphabetical)
+    --threads=#       Parallelize with # threads (default 8).
+
+EOF
+
+  exit 1
+}
+
+SendFiles() {
+  echo "sending $1..."
+  $tar_cmd_src cf - "$1" | $lz4_cmd_src | $ssh_cmd "cd $dest_dir; $lz4_cmd_dest -d | $tar_cmd_dest xf -"
+}
+## exported for backgrounding by 'xargs -P'
+export -f SendFiles
+
+
+Main() {
+
+  Debug "src = $1"
+  Debug "dest = $2"
+
+  (( $# == 2 )) || Usage
+
+  (( depth == 1 )) || Emergency "depth > 1 is not supported yet"
+
+  ## size-sorting uses 'du -sk *', which doesn't include dotfiles.
+  if (( sorted == 1 )) && (( dotfiles == 1 )); then
+    Emergency "Cannot send dotfiles in size-sorted order."
+  fi
+
+  src_dir="$1"
+
+  [[ -e "$src_dir" ]] || Emergency "source path does not exist"
+  [[ -d "$src_dir" ]] || Emergency "source path is not a directory"
+
+  read -r dest_host dest_dir <<< $(echo "$2" | tr ':' ' ')
+
+  Debug "dest_host = $dest_host"
+  Debug "dest_dir = $dest_dir"
+
+  [[ -n "$dest_dir" ]] || Emergency "destination path not provided"
+
+  export dest_dir
+  export ssh_cmd="$ssh_cmd $dest_host"
+
+  cd "$src_dir" || Emergency "could not cd to $src_dir"
+
+  ## This attempt will fail with an adequate error message on:
+  ##  1. Unreachable/unknown host
+  ##  2. Nonexistent remote parent directory path
+  ##  3. 'mkdir' permission denied on remote path
+  $ssh_cmd "[[ -d $dest_dir ]] || mkdir $dest_dir" ||
+    Emergency "could not create target directory on remote host $dest_host"
+
+  if [[ "$($ssh_cmd uname)" == "SunOS" ]]; then
+    Debug "Server side is Solaris/Illumos"
+    tar_cmd_dest="gtar"
+    lz4_cmd_dest="/usr/local/bin/lz4"
+  fi
+
+  if (( sorted )); then
+
+    ## sort by size to send
+    du -sk ./* | sort -rn | awk '{print $2}' | $xargs_cmd -L 1 -P $threads -I {} bash -c 'SendFiles "$@"' _ {}
+
+  else
+
+    ## just list and send
+    $ls_cmd  | $xargs_cmd -L 1 -P $threads -I {} bash -c 'SendFiles "$@"' _ {}
+
+  fi
+
+  cd - > /dev/null 2>&1 || Error "'cd -' failed at end"
+}
+
+Argv_                () { Usage; }
+
+Argv_call_           () { shift; Main "$@"; }
+
+Argv_option_sorted   () {
+  sorted=1
+  Dispatch Argv "$@"
+}
+Argv_option_depth    () {
+  (( $1 )) || Emergency "Must provide integer depth "
+  depth="$1"
+  shift
+  Dispatch Argv "$@"
+}
+Argv_option_dotfiles () {
+  dotfiles=1
+  ls_cmd="$lsa_cmd"
+  Dispatch Argv "$@"
+}
+Argv_option_sshuser  () {
+  # shellcheck disable=SC2154
+  [[ -n "$longval" ]] || Emergency "Must provide ssh username"
+  ssh_cmd="$ssh_cmd -l $1"
+  shift
+  Dispatch Argv "$@"
+}
+Argv_option_sshkey   () {
+  # shellcheck disable=SC2154
+  [[ -n "$longval" ]] || Emergency "Must provide ssh private key file"
+  [[ -e "$1" ]] || Emergency "ssh key file $1 not found"
+  ssh_cmd="$ssh_cmd -i $1"
+  shift
+  Dispatch Argv "$@"
+}
+Argv_option_threads  () {
+  (( $1 )) || Emergency "Must provide integer threads"
+  threads="$longval"
+}
+
+Dispatch Argv "$@"
+
+# shellcheck disable=SC2154
+exit $error
