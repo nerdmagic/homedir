@@ -78,4 +78,4 @@ export HISTSIZE=5000
 export HISTFILESIZE=10000
 export PROMPT_COMMAND="history -a; history -c ; history -r"
 
-umask 077
+[[ "$SHORTNAME" == "havoc" ]] && umask 022
